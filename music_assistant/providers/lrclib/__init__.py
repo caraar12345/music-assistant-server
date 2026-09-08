@@ -32,6 +32,7 @@ SUPPORTED_FEATURES = {
 }
 
 CONF_API_URL = "api_url"
+CONF_ALWAYS_USE = "always_use"
 DEFAULT_API_URL = "https://lrclib.net/api"
 USER_AGENT = "MusicAssistant (https://github.com/music-assistant/server)"
 
@@ -55,12 +56,19 @@ class LrclibProvider(MetadataProvider):
                 default_value=DEFAULT_API_URL,
                 required=False,
             ),
+            ConfigEntry(
+                key=CONF_ALWAYS_USE,
+                type=ConfigEntryType.BOOLEAN,
+                default_value=False,
+                required=False,
+            ),
         )
 
     async def handle_async_init(self) -> None:
         """Handle async initialization of the provider."""
         # Get the API URL from config
         self.api_url = self.config.get_value(CONF_API_URL)
+        self.always_use = self.config.get_value(CONF_ALWAYS_USE)
 
         # Only use strict throttling if using the default API
         if self.api_url == DEFAULT_API_URL:
@@ -73,7 +81,11 @@ class LrclibProvider(MetadataProvider):
 
     async def get_track_metadata(self, track: Track) -> MediaItemMetadata | None:
         """Retrieve synchronized lyrics for a track."""
-        if track.metadata and (track.metadata.lyrics or track.metadata.lrc_lyrics):
+        if (
+            not self.always_use
+            and track.metadata
+            and (track.metadata.lyrics or track.metadata.lrc_lyrics)
+        ):
             self.logger.debug(
                 "Lyrics already exist for %s, skipping LRCLIB lookup for this track.",
                 track.name,

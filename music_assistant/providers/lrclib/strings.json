@@ -3,6 +3,10 @@
     "api_url": {
       "label": "API URL",
       "description": "URL of the LRCLib API (including 'api' but excluding '/get')"
+    },
+    "always_use": {
+      "label": "Always use LRCLIB, regardless of existing lyrics",
+      "description": "By default, LRCLIB is skipped for a track that already has lyrics from another source. Enable this to always query LRCLIB and let its result take priority, overwriting any lyrics already found."
     }
   },
   "manifest": {

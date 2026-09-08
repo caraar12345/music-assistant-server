@@ -1614,6 +1614,8 @@
   "provider.loudness_analysis.config_entries.write_replaygain_tags.description": "When the background audio-analysis scan produces a loudness measurement, also write the corresponding REPLAYGAIN_TRACK_GAIN tag back into the audio file. Useful if other apps on your network read these tags for their own volume normalization. Requires write access to the file; read-only files are silently skipped.",
   "provider.loudness_analysis.config_entries.write_replaygain_tags.label": "Write REPLAYGAIN_TRACK_GAIN tags back to files",
   "provider.loudness_analysis.manifest.description": "EBU R128 integrated loudness measurement used for volume normalization.",
+  "provider.lrclib.config_entries.always_use.description": "By default, LRCLIB is skipped for a track that already has lyrics from another source. Enable this to always query LRCLIB and let its result take priority, overwriting any lyrics already found.",
+  "provider.lrclib.config_entries.always_use.label": "Always use LRCLIB, regardless of existing lyrics",
   "provider.lrclib.config_entries.api_url.description": "URL of the LRCLib API (including 'api' but excluding '/get')",
   "provider.lrclib.config_entries.api_url.label": "API URL",
   "provider.lrclib.manifest.description": "Primary lyrics provider, delivering synced and unsynced lyrics from the LrcLib database.",
