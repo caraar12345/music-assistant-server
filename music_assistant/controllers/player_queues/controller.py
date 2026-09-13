@@ -323,9 +323,16 @@ class PlayerQueuesController(QueueLoaderMixin, PlaybackTrackerMixin, StreamFeede
             raise InvalidDataError(f"Queue {queue_id} not found")
         speed = get_current_playback_speed(queue)
         anchor: float | None = None
-        if queue.state == PlaybackState.PLAYING:
-            player = self.mass.players.get_player(player_id or queue_id)
-            if player is not None:
+        if queue.state == PlaybackState.PLAYING and (
+            player := self.mass.players.get_player(player_id or queue_id)
+        ):
+            # Only a player actually rendering this queue carries its timeline. Without
+            # this check an unrelated player_id would pair that player's audio with this
+            # queue's metadata - a confidently wrong answer rather than a missing one.
+            # get_active_queue follows sync leaders, groups and protocol parents, so a
+            # member of the group playing this queue still passes.
+            active_queue = self.mass.players.get_active_queue(player)
+            if active_queue is not None and active_queue.queue_id == queue_id:
                 anchor = player.resolve_output_player().audio_position_anchor()
         anchor_source = "player"
         if anchor is None:

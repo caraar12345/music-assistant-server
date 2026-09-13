@@ -22,8 +22,14 @@ def _controller(
     *,
     state: PlaybackState = PlaybackState.PLAYING,
     player_anchor: float | None = None,
+    player_plays_queue: str = QUEUE_ID,
 ) -> tuple[PlayerQueuesController, PlayerQueue]:
-    """Build a bare controller with one playing queue and a stubbed rendering player."""
+    """
+    Build a bare controller with one playing queue and a stubbed rendering player.
+
+    :param player_plays_queue: The queue the stubbed player is actually rendering, as
+        get_active_queue reports it. Defaults to the queue under test.
+    """
     ctrl = PlayerQueuesController.__new__(PlayerQueuesController)
     queue = PlayerQueue(queue_id=QUEUE_ID, active=True, display_name="Q1", available=True, items=1)
     item = QueueItem(queue_id=QUEUE_ID, queue_item_id="i1", name="track", duration=210)
@@ -39,6 +45,13 @@ def _controller(
     player = MagicMock()
     player.resolve_output_player.return_value.audio_position_anchor.return_value = player_anchor
     ctrl.mass.players.get_player.return_value = player
+    ctrl.mass.players.get_active_queue.return_value = PlayerQueue(
+        queue_id=player_plays_queue,
+        active=True,
+        display_name=player_plays_queue,
+        available=True,
+        items=1,
+    )
     return ctrl, queue
 
 
@@ -77,3 +90,26 @@ def test_unknown_queue_raises() -> None:
     ctrl, _ = _controller()
     with pytest.raises(InvalidDataError):
         ctrl.playback_anchor("nope")
+
+
+def test_player_rendering_another_queue_is_ignored() -> None:
+    """
+    A player_id playing something else must not lend its timeline to this queue.
+
+    Its anchor would otherwise be returned alongside this queue's track metadata,
+    timing one queue's audio against another queue's item.
+    """
+    ctrl, queue = _controller(player_anchor=time.time() - 99, player_plays_queue="other-queue")
+    result = ctrl.playback_anchor(QUEUE_ID, player_id="unrelated-player")
+    assert result["anchor_source"] == "elapsed_time"
+    derived = (result["server_time"] - result["anchor"]) * result["playback_speed"]
+    assert derived == pytest.approx(queue.corrected_elapsed_time, abs=0.01)
+
+
+def test_group_member_rendering_this_queue_is_accepted() -> None:
+    """A member whose active queue resolves back to this one keeps its own anchor."""
+    anchor = time.time() - 3.5
+    ctrl, _ = _controller(player_anchor=anchor, player_plays_queue=QUEUE_ID)
+    result = ctrl.playback_anchor(QUEUE_ID, player_id="group-member")
+    assert result["anchor"] == anchor
+    assert result["anchor_source"] == "player"
