@@ -295,6 +295,65 @@ class PlayerQueuesController(QueueLoaderMixin, PlaybackTrackerMixin, StreamFeede
             return self.mass.players.get_active_queue(player)
         return None
 
+    @api_command("player_queues/playback_anchor", required_scope=Scope.QUEUES_READ)
+    def playback_anchor(self, queue_id: str, player_id: str | None = None) -> dict[str, Any]:
+        """
+        Return the wall-clock anchor of the current item, for clock-accurate position.
+
+        A caller that knows the anchor derives the position from its own clock -
+        ``position = (now - anchor) * playback_speed`` - instead of re-reading a reported
+        elapsed time, which is only republished about once a second and is rounded to
+        whole seconds by most consumers. That is the difference between lyrics landing
+        on the syllable and landing somewhere in the line.
+
+        ``anchor_source`` says how good the answer is. ``player`` means the rendering
+        player scheduled the audio against a synchronised clock and the anchor is exact
+        to within that clock's sync (sub-10ms for Sendspin), with its send-ahead buffer
+        and per-device static delay already accounted for. ``elapsed_time`` means it was
+        derived from the reported position instead and is only as good as that - use it,
+        but expect it to be off by up to a second.
+
+        :param queue_id: The queue to report on (the player_id of the queue's player).
+        :param player_id: Optionally, the group member the anchor should apply to, so its
+            own static delay is taken into account rather than the group leader's.
+        """
+        now = time.time()
+        queue = self.get(queue_id)
+        if queue is None:
+            raise InvalidDataError(f"Queue {queue_id} not found")
+        speed = get_current_playback_speed(queue)
+        anchor: float | None = None
+        if queue.state == PlaybackState.PLAYING and (
+            player := self.mass.players.get_player(player_id or queue_id)
+        ):
+            # Only a player actually rendering this queue carries its timeline. Without
+            # this check an unrelated player_id would pair that player's audio with this
+            # queue's metadata - a confidently wrong answer rather than a missing one.
+            # get_active_queue follows sync leaders, groups and protocol parents, so a
+            # member of the group playing this queue still passes.
+            active_queue = self.mass.players.get_active_queue(player)
+            if active_queue is not None and active_queue.queue_id == queue_id:
+                anchor = player.resolve_output_player().audio_position_anchor()
+        anchor_source = "player"
+        if anchor is None:
+            # No synchronised clock to ask (or nothing playing): fall back to the reported
+            # position, expressed as the same kind of anchor so callers need only one path.
+            anchor_source = "elapsed_time"
+            anchor = now - (queue.corrected_elapsed_time / speed if speed else 0.0)
+        current_item = queue.current_item
+        return {
+            "queue_id": queue.queue_id,
+            "state": queue.state.value,
+            "anchor": anchor,
+            "anchor_source": anchor_source,
+            "playback_speed": speed,
+            "server_time": now,
+            "elapsed_time": queue.corrected_elapsed_time,
+            "queue_item_id": current_item.queue_item_id if current_item else None,
+            "uri": current_item.uri if current_item else None,
+            "duration": current_item.duration if current_item else None,
+        }
+
     # Queue commands
 
     @api_command("player_queues/shuffle", required_scope=Scope.QUEUES_CONTROL)

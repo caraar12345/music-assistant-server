@@ -1500,6 +1500,26 @@ class Player(ABC):
             )
         return _clamp_elapsed_time(self.elapsed_time)
 
+    def audio_position_anchor(self) -> float | None:
+        """
+        Return the wall-clock time at which stream position 0 of the current item is heard.
+
+        A player that schedules its audio against a synchronised clock knows exactly when
+        a given sample leaves the speakers, so it can hand out that one timestamp instead
+        of a position that has to be re-read. A consumer then derives the position from
+        its own clock alone (``position = (now - anchor) * playback_speed``), which is
+        free of the reporting lag, one-second quantisation and extrapolation error that
+        ``corrected_elapsed_time`` carries - accurate enough to drive per-syllable lyrics.
+
+        The anchor already accounts for everything between the server and the speaker
+        (send-ahead buffer, per-device static delay), so it moves only on a seek, a track
+        change or a re-sync - never with wall time.
+
+        Returns None for a player with no such clock (the default) and whenever the
+        anchor is not currently known.
+        """
+        return None
+
     @cached_property
     @final
     def icon(self) -> str:

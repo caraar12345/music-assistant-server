@@ -198,6 +198,21 @@ Sendspin players support:
 - **Playback control** - Play, pause, stop, next, previous
 - **Repeat/Shuffle** - Queue control from clients
 
+## Playback position
+
+Sendspin commits every chunk of audio with the server-clock timestamp its clients are to
+render it at, so the server knows exactly when a given sample reaches the speakers. The
+commit loop records that as the session's timeline anchor, and `SendspinPlayer` exposes it
+through `Player.audio_position_anchor()` as a wall-clock timestamp for the current track's
+start, with the client's own static delay folded in.
+
+`player_queues/playback_anchor` serves it to API clients. A consumer that needs the
+position to line up with what is being heard - lyrics, visuals - derives it from that one
+timestamp and its own clock (`position = (now - anchor) * playback_speed`) instead of
+reading `elapsed_time`, which is only republished once a second and says nothing about the
+audio still sitting in the send-ahead buffer. The beat schedule pushed to the visualizer
+role is anchored to the same timeline.
+
 ## Files
 
 | File | Description |

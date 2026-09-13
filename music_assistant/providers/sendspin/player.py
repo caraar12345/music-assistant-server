@@ -1581,6 +1581,57 @@ class SendspinPlayer(SendspinBasePlayer):
             abort_existing=True,
         )
 
+    def audio_position_anchor(self) -> float | None:
+        """
+        Return the wall-clock time at which this client renders the current track's start.
+
+        Sendspin commits every chunk with the server-clock timestamp the clients are to
+        render it at, so the timeline anchor the commit loop records is the moment the
+        audio actually leaves the speaker - send-ahead buffer, network and this device's
+        own static delay included. That makes it a far better base for anything that has
+        to line up with what is being heard (lyrics, visuals) than an elapsed time that
+        is only republished once a second and then extrapolated.
+
+        Returns None until the first chunk commits, while the flow log has not recorded
+        the current track yet, and whenever the group is not playing - the caller falls
+        back to the reported elapsed time in those cases.
+        """
+        if self.state.playback_state != PlaybackState.PLAYING:
+            return None
+        # Only the group leader owns the playback session and its timeline; a follower
+        # renders the very same timeline, offset by its own static delay.
+        session_owner = self
+        if leader_id := self.synced_to:
+            leader = self.mass.players.get_player(leader_id)
+            if not isinstance(leader, SendspinPlayer):
+                return None
+            session_owner = leader
+        current_media = session_owner.state.current_media
+        if current_media is None or not current_media.source_id or not current_media.queue_item_id:
+            return None
+        queue_item = self.mass.player_queues.get_item(
+            current_media.source_id, current_media.queue_item_id
+        )
+        if queue_item is None:
+            return None
+        pq_data = self.mass.player_queues.queue_data_or_none(current_media.source_id)
+        offset_us = self._flow_track_offset_us(pq_data, queue_item)
+        if offset_us is None:
+            return None
+        anchor_us = session_owner.playback_session.flow_track_anchor_us(offset_us)
+        if anchor_us is None:
+            return None
+        provider = cast("SendspinProvider", session_owner.provider)
+        # Read both clocks together so their difference is the only thing that carries over.
+        now_us = provider.server_api.clock.now_us()
+        wall_now = time.time()
+        static_delay_ms = self.config.get_value(
+            CONF_SENDSPIN_STATIC_DELAY, self.static_delay_default_ms
+        )
+        if not isinstance(static_delay_ms, int):
+            static_delay_ms = self.static_delay_default_ms
+        return wall_now - (now_us - anchor_us) / 1_000_000 + static_delay_ms / 1000
+
     async def send_current_media_metadata(self) -> None:
         """Send the current media metadata to the sendspin group."""
         if not self.available:
