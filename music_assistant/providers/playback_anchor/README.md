@@ -23,6 +23,21 @@ position = (now - anchor) * playback_speed
 The anchor moves only on a seek, a track change or a re-sync — never with wall time — so a
 client fetches it once per track rather than polling a position.
 
+## Installing
+
+The provider has no Python requirements and touches no core code, so it needs nothing more
+than to be present in the server's `music_assistant/providers/` directory — which is listed
+at startup — and then enabled in Settings → Providers. On a stock container that can be a
+bind mount of this folder into the installed package, no rebuilt image involved:
+
+```yaml
+volumes:
+  - ./playback_anchor:/usr/local/lib/python3.14/site-packages/music_assistant/providers/playback_anchor:ro
+```
+
+(Check the interpreter path in your own image; a mount like this has to be re-checked when
+the server's Python version moves.)
+
 ## API
 
 `playback_anchor/get` (scope: `queues:read`)
