@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from logging import Logger
 from typing import TYPE_CHECKING
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from aiojellyfin import ImageType as JellyImageType
 from music_assistant_models.enums import ContentType, ExternalID, ImageType, MediaType
@@ -140,7 +141,7 @@ def parse_album(
         album.artists.append(_unknown_artist_mapping(instance_id))
 
     user_data = jellyfin_album.get(ITEM_KEY_USER_DATA, {})
-    album.favorite = user_data.get(USER_DATA_KEY_IS_FAVORITE, False)
+    album.favorite = True if user_data.get(USER_DATA_KEY_IS_FAVORITE) else None
     return album
 
 
@@ -176,7 +177,7 @@ def parse_artist(
         artist.sort_name = jellyfin_artist[ITEM_KEY_SORT_NAME]
     artist.metadata.images = _get_artwork(instance_id, connection, jellyfin_artist)
     user_data = jellyfin_artist.get(ITEM_KEY_USER_DATA, {})
-    artist.favorite = user_data.get(USER_DATA_KEY_IS_FAVORITE, False)
+    artist.favorite = True if user_data.get(USER_DATA_KEY_IS_FAVORITE) else None
     return artist
 
 
@@ -222,7 +223,7 @@ def parse_track(
                 provider_instance=instance_id,
                 available=available,
                 audio_format=audio_format(jellyfin_track),
-                url=client.audio_url(jellyfin_track[ITEM_KEY_ID]),
+                url=f"{client.base_url}/web/#/details?id={jellyfin_track[ITEM_KEY_ID]}",
             )
         },
     )
@@ -273,7 +274,7 @@ def parse_track(
                 exc_info=error if logger.isEnabledFor(logging.DEBUG) else None,
             )
     user_data = jellyfin_track.get(ITEM_KEY_USER_DATA, {})
-    track.favorite = user_data.get(USER_DATA_KEY_IS_FAVORITE, False)
+    track.favorite = True if user_data.get(USER_DATA_KEY_IS_FAVORITE) else None
     return track
 
 
@@ -298,9 +299,27 @@ def parse_playlist(
         playlist.metadata.description = jellyfin_playlist[ITEM_KEY_OVERVIEW]
     playlist.metadata.images = _get_artwork(instance_id, client, jellyfin_playlist)
     user_data = jellyfin_playlist.get(ITEM_KEY_USER_DATA, {})
-    playlist.favorite = user_data.get(USER_DATA_KEY_IS_FAVORITE, False)
+    playlist.favorite = True if user_data.get(USER_DATA_KEY_IS_FAVORITE) else None
     playlist.is_editable = False
     return playlist
+
+
+def set_api_key(url: str, api_key: str | None) -> str:
+    """
+    Return the URL with its Jellyfin auth query param replaced, or removed when api_key is None.
+
+    :param url: Jellyfin media URL, with or without an auth query param.
+    :param api_key: Access token to authenticate the URL with.
+    """
+    parsed = urlsplit(url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in ("api_key", "apikey")
+    ]
+    if api_key is not None:
+        query.append(("apiKey", api_key))
+    return urlunsplit(parsed._replace(query=urlencode(query)))
 
 
 def _unknown_artist_mapping(instance_id: str) -> ItemMapping:
@@ -321,7 +340,10 @@ def _get_artwork(
         images.append(
             MediaItemImage(
                 type=ImageType.FANART,
-                path=client.artwork(media_item[ITEM_KEY_ID], JellyImageType.Backdrop, index=i),
+                path=set_api_key(
+                    client.artwork(media_item[ITEM_KEY_ID], JellyImageType.Backdrop, index=i),
+                    None,
+                ),
                 provider=instance_id,
                 remotely_accessible=False,
             )
@@ -333,7 +355,9 @@ def _get_artwork(
             images.append(
                 MediaItemImage(
                     type=image_type,
-                    path=client.artwork(media_item[ITEM_KEY_ID], jelly_image_type),
+                    path=set_api_key(
+                        client.artwork(media_item[ITEM_KEY_ID], jelly_image_type), None
+                    ),
                     provider=instance_id,
                     remotely_accessible=False,
                 )
